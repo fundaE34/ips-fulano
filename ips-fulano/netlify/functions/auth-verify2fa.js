@@ -19,12 +19,15 @@ exports.handler = async (event) => {
     const { rows } = await query(
       `SELECT * FROM codigo_verificacion
        WHERE email=$1 AND codigo=$2 AND tipo='2fa' AND usado=false
-       AND expira_en > (NOW() AT TIME ZONE 'UTC')
        ORDER BY id DESC LIMIT 1`,
       [user.email, codigo]
     );
 
     if (!rows.length) return cors({ error: 'Código inválido o expirado' }, 401);
+
+    // Verificar expiración en JavaScript (evita problema de timezone)
+    const expira = new Date(rows[0].expira_en + 'Z'); // forzar UTC
+    if (expira < new Date()) return cors({ error: 'Código expirado' }, 401);
 
     await query(`UPDATE codigo_verificacion SET usado=true WHERE id=$1`, [rows[0].id]);
     await query(
