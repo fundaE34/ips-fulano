@@ -61,7 +61,7 @@ exports.handler = async (event) => {
 
     if (dosfa) {
       const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-      const expira = new Date(Date.now() + 5 * 60000);
+      const expira = new Date(Date.now() + 5 * 60000).toISOString();
       await query(
         `INSERT INTO codigo_verificacion(email,codigo,tipo,expira_en) VALUES($1,$2,'2fa',$3)`,
         [email, codigo, expira]
