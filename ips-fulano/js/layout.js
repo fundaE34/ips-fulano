@@ -78,3 +78,33 @@ function renderLayout(pageTitle) {
 }
 
 window.renderLayout = renderLayout;
+
+function initSidebar() {
+  const hamburger = document.querySelector('.hamburger');
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.querySelector('.overlay-sidebar');
+  const logoutBtn = document.querySelector('.logout-btn');
+
+  if (hamburger) hamburger.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show');
+  });
+  if (overlay) overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+  });
+  if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // Marcar nav item activo
+  const path = window.location.pathname;
+  document.querySelectorAll('.nav-item').forEach(a => {
+    if (a.getAttribute('href') === path) a.classList.add('active');
+  });
+
+  // Ocultar items de admin si no es admin
+  const user = getUser();
+  if (user && user.rol !== 'admin') {
+    document.querySelectorAll('[data-rol="admin"]').forEach(el => el.style.display = 'none');
+  }
+}
+window.initSidebar = initSidebar;
