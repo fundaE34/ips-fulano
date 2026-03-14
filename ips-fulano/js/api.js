@@ -1,4 +1,4 @@
-const API = '/api';
+const API_BASE = '/api';
 
 function getToken() { return localStorage.getItem('token'); }
 function getUser()  { return JSON.parse(localStorage.getItem('usuario') || 'null'); }
@@ -7,6 +7,14 @@ function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
   window.location.href = '/';
+}
+
+function requireAuth() {
+  if (!localStorage.getItem('token')) {
+    window.location.href = '/';
+    return false;
+  }
+  return true;
 }
 
 async function req(method, path, body = null) {
@@ -18,7 +26,7 @@ async function req(method, path, body = null) {
     },
   };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${API}${path}`, opts);
+  const res = await fetch(`${API_BASE}${path}`, opts);
   if (res.status === 401) { logout(); return null; }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Error del servidor');
@@ -80,19 +88,5 @@ const api = {
 window.api = api;
 window.getUser = getUser;
 window.logout = logout;
-
-function requireAuth() {
-  if (!localStorage.getItem('token')) {
-    window.location.href = '/';
-    return false;
-  }
-  return true;
-}
 window.requireAuth = requireAuth;
-
-// Alias para compatibilidad con layout.js
-const API = {
-  usuario: getUser,
-  logout: logout
-};
-window.API = API;
+window.API = { usuario: getUser, logout: logout };
