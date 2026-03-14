@@ -8,6 +8,7 @@
     "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
     "nodemailer": "^6.9.9",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "archiver": "^7.0.1"
   }
 }
