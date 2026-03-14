@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pacientes — IPS Fulano</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+<div class="main">
+  <div class="topbar"><h1>Pacientes</h1></div>
+  <div class="page active">
+    <div class="card">
+      <div class="card-header">
+        <h3>👥 Lista de Pacientes</h3>
+        <button class="btn btn-primary" onclick="abrirNuevo()">+ Nuevo Paciente</button>
+      </div>
+      <div class="card-body">
+        <div class="search-bar" style="margin-bottom:16px;">
+          <input type="text" id="searchInput" class="search-input" placeholder="Buscar por nombre o identificación...">
+          <button class="btn btn-secondary" onclick="buscar()">🔍 Buscar</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Nombre</th><th>Identificación</th><th>Teléfono</th><th>Email</th><th>Sexo</th><th>Acciones</th></tr></thead>
+            <tbody id="tbPacientes"></tbody>
+          </table>
+        </div>
+        <div id="pagPacientes" class="pagination"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal paciente -->
+<div class="modal-overlay" id="modalPac">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="modalPacTitulo">Nuevo Paciente</h3>
+      <button class="modal-close" onclick="closeModal('modalPac')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="formPac">
+        <input type="hidden" id="pacId">
+        <div class="form-grid">
+          <div class="form-group form-full">
+            <label>Nombre completo *</label>
+            <input type="text" id="pacNombre" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>Tipo de identificación</label>
+            <select id="pacTipoId" class="form-control">
+              <option>CC</option><option>TI</option><option>CE</option><option>PA</option><option>RC</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Número de identificación *</label>
+            <input type="text" id="pacId2" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="text" id="pacTel" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="pacEmail" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Fecha de nacimiento</label>
+            <input type="date" id="pacFechaN" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Sexo</label>
+            <select id="pacSexo" class="form-control">
+              <option value="">— Seleccionar —</option>
+              <option>Masculino</option><option>Femenino</option><option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group form-full">
+            <label>Dirección</label>
+            <input type="text" id="pacDir" class="form-control">
+          </div>
+        </div>
+        <div id="camposExtra" style="margin-top:16px;"></div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modalPac')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPaciente()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script><script src="js/app.js"></script>
+<script>
+const user = authGuard();
+let campos = [];
+let allPac = [];
+let page = 1;
+const PER_PAGE = 20;
+
+if (user) {
+  renderSidebar('pacientes.html');
+  cargarTodo();
+}
+
+async function cargarTodo() {
+  [campos, allPac] = await Promise.all([api.getCampos(), api.getPacientes()]);
+  renderTabla();
+}
+
+function renderTabla(data = allPac) {
+  const start = (page-1)*PER_PAGE, slice = data.slice(start, start+PER_PAGE);
+  document.getElementById('tbPacientes').innerHTML = slice.map(p => `
+    <tr>
+      <td>${p.id}</td>
+      <td><strong>${p.nombre}</strong></td>
+      <td>${p.tipo_identificacion||'CC'} ${p.identificacion}</td>
+      <td>${p.telefono||'—'}</td>
+      <td>${p.email||'—'}</td>
+      <td>${p.sexo||'—'}</td>
+      <td>
+        <a href="historias.html?pac=${p.id}" class="btn btn-sm btn-secondary" title="Historia">📋</a>
+        <button class="btn btn-sm btn-secondary" onclick="editarPac(${p.id})" title="Editar">✏️</button>
+        ${user.rol==='admin' ? `<button class="btn btn-sm btn-danger" onclick="borrarPac(${p.id},'${p.nombre}')" title="Desactivar">🗑️</button>` : ''}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--gris);padding:30px;">No hay pacientes</td></tr>';
+  renderPag(data.length);
+}
+
+function renderPag(total) {
+  const pages = Math.ceil(total/PER_PAGE);
+  if (pages <= 1) { document.getElementById('pagPacientes').innerHTML=''; return; }
+  let html = '';
+  for (let i=1; i<=pages; i++)
+    html += `<button class="page-btn ${i===page?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  document.getElementById('pagPacientes').innerHTML = html;
+}
+function goPage(p) { page=p; renderTabla(); }
+
+async function buscar() {
+  const q = document.getElementById('searchInput').value.trim();
+  page = 1;
+  if (q) {
+    const res = await api.getPacientes(q);
+    renderTabla(res||[]);
+  } else {
+    renderTabla(allPac);
+  }
+}
+document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') buscar(); });
+
+async function abrirNuevo() {
+  document.getElementById('pacId').value = '';
+  document.getElementById('modalPacTitulo').textContent = 'Nuevo Paciente';
+  ['pacNombre','pacId2','pacTel','pacEmail','pacFechaN','pacDir'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('pacTipoId').value='CC';
+  document.getElementById('pacSexo').value='';
+  renderCamposExtra({});
+  openModal('modalPac');
+}
+
+async function editarPac(id) {
+  const p = await api.getPaciente(id);
+  if (!p) return;
+  document.getElementById('pacId').value = p.id;
+  document.getElementById('modalPacTitulo').textContent = 'Editar Paciente';
+  document.getElementById('pacNombre').value = p.nombre||'';
+  document.getElementById('pacId2').value   = p.identificacion||'';
+  document.getElementById('pacTipoId').value= p.tipo_identificacion||'CC';
+  document.getElementById('pacTel').value   = p.telefono||'';
+  document.getElementById('pacEmail').value = p.email||'';
+  document.getElementById('pacFechaN').value= p.fecha_nacimiento||'';
+  document.getElementById('pacSexo').value  = p.sexo||'';
+  document.getElementById('pacDir').value   = p.direccion||'';
+  const vals = {};
+  (p.campos_extra||[]).forEach(c => { if(c.campo_id) vals[c.campo_id]=c.valor; });
+  renderCamposExtra(vals);
+  openModal('modalPac');
+}
+
+function renderCamposExtra(vals) {
+  if (!campos.length) return;
+  document.getElementById('camposExtra').innerHTML = `
+    <hr style="margin:12px 0;border-color:var(--borde)">
+    <p style="font-size:12px;font-weight:700;color:var(--gris);text-transform:uppercase;margin-bottom:12px;">Campos adicionales</p>
+    <div class="form-grid">
+      ${campos.map(c => `
+        <div class="form-group">
+          <label>${c.nombre}${c.obligatorio?' *':''}</label>
+          ${c.tipo==='seleccion'
+            ? `<select class="form-control" id="ce_${c.id}">
+                <option value="">— Seleccionar —</option>
+                ${(c.opciones||'').split(',').map(o=>`<option ${vals[c.id]===o.trim()?'selected':''}>${o.trim()}</option>`).join('')}
+               </select>`
+            : c.tipo==='texto_largo'
+            ? `<textarea class="form-control" id="ce_${c.id}">${vals[c.id]||''}</textarea>`
+            : `<input type="${c.tipo==='fecha'?'date':c.tipo==='numero'?'number':'text'}"
+                 class="form-control" id="ce_${c.id}" value="${vals[c.id]||''}">`
+          }
+        </div>`).join('')}
+    </div>`;
+}
+
+async function guardarPaciente() {
+  const id = document.getElementById('pacId').value;
+  const data = {
+    nombre:             document.getElementById('pacNombre').value.trim(),
+    identificacion:     document.getElementById('pacId2').value.trim(),
+    tipo_identificacion:document.getElementById('pacTipoId').value,
+    telefono:           document.getElementById('pacTel').value.trim(),
+    email:              document.getElementById('pacEmail').value.trim(),
+    fecha_nacimiento:   document.getElementById('pacFechaN').value || null,
+    sexo:               document.getElementById('pacSexo').value,
+    direccion:          document.getElementById('pacDir').value.trim(),
+  };
+  if (!data.nombre || !data.identificacion) return toast('Nombre e identificación son obligatorios','error');
+  // Campos extra
+  const extras = {};
+  campos.forEach(c => {
+    const val = document.getElementById(`ce_${c.id}`)?.value;
+    if (val) extras[c.id] = val;
+  });
+  data.campos_extra = extras;
+  try {
+    if (id) {
+      await api.editarPaciente(id, data);
+      toast('Paciente actualizado');
+    } else {
+      await api.crearPaciente(data);
+      toast('Paciente creado');
+    }
+    closeModal('modalPac');
+    allPac = await api.getPacientes();
+    renderTabla();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function borrarPac(id, nombre) {
+  if (!confirm(`¿Desactivar al paciente "${nombre}"?`)) return;
+  try {
+    await api.borrarPaciente(id);
+    toast('Paciente desactivado');
+    allPac = await api.getPacientes();
+    renderTabla();
+  } catch(e) { toast(e.message,'error'); }
+}
+</script>
+</body></html>

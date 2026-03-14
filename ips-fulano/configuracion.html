@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Configuración — IPS Fulano</title><link rel="stylesheet" href="/css/app.css"></head>
+<body>
+<script src="/js/api.js"></script><script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+const u = API.usuario();
+if (u.rol !== 'admin') { window.location.href='/dashboard.html'; throw ''; }
+renderLayout('Configuración del sistema');
+
+let config={};
+
+async function init() {
+  config = await API.admin.config();
+  render();
+}
+
+function render() {
+  document.getElementById('page-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+      <!-- 2FA -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🔐 Autenticación en 2 pasos</span></div>
+        <div class="card-body">
+          <p class="text-muted" style="margin-bottom:16px;">Cuando está activo, todos los usuarios deben ingresar un código de 6 dígitos enviado a su correo al iniciar sesión.</p>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label style="font-weight:600;">Estado:</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="toggle-2fa" ${config['2fa_activo']==='true'?'checked':''} onchange="toggle2fa(this.checked)" style="width:18px;height:18px;">
+              <span id="label-2fa">${config['2fa_activo']==='true'?'Activo':'Inactivo'}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Correo Gmail -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">📧 Configuración de correo</span></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Gmail</label>
+            <input id="gmail-user" class="form-control" value="${config['gmail_user']||''}" placeholder="correo@gmail.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">App Password de Gmail</label>
+            <input id="gmail-pass" class="form-control" type="password" value="${config['gmail_app_password']||''}" placeholder="xxxx xxxx xxxx xxxx">
+          </div>
+          <button class="btn btn-primary" onclick="guardarCorreo()">💾 Guardar correo</button>
+        </div>
+      </div>
+
+      <!-- Correos backup -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">💾 Correos para backup</span></div>
+        <div class="card-body" id="correos-container">
+          <p class="text-muted">Cargando...</p>
+        </div>
+      </div>
+
+      <!-- Drive -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">☁️ Google Drive</span></div>
+        <div class="card-body" id="drive-container">
+          <p class="text-muted">Cargando...</p>
+        </div>
+      </div>
+
+      <!-- Versión -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">ℹ️ Versión del sistema</span></div>
+        <div class="card-body">
+          <p style="font-size:24px;font-weight:800;color:var(--rojo);">v${config['version']||'2.0.0'}</p>
+          <p class="text-muted mt-1">IPS Fulano — Sistema de Gestión en Salud</p>
+          <p class="text-muted">Netlify + Neon PostgreSQL</p>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  cargarCorreos();
+  cargarDrive();
+}
+
+async function toggle2fa(activo) {
+  document.getElementById('label-2fa').textContent = activo ? 'Activo' : 'Inactivo';
+  try {
+    await API.admin.guardarConfig({ '2fa_activo': activo ? 'true' : 'false' });
+    toast(`2FA ${activo?'activado':'desactivado'}`, 'success');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function guardarCorreo() {
+  try {
+    await API.admin.guardarConfig({
+      gmail_user: document.getElementById('gmail-user').value.trim(),
+      gmail_app_password: document.getElementById('gmail-pass').value.trim(),
+    });
+    toast('Configuración de correo guardada','success');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function cargarCorreos() {
+  const container = document.getElementById('correos-container');
+  try {
+    const correos = await API.admin.correosBackup();
+    container.innerHTML = `
+      <div class="mb-3">
+        ${correos.map(c=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--borde);">
+            <div>
+              <span style="font-size:13px;">${c.email}</span>
+              ${c.verificado
+                ? `<span class="badge badge-success" style="margin-left:6px;">Verificado</span>`
+                : `<span class="badge badge-warning" style="margin-left:6px;">Pendiente</span>`}
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="eliminarCorreo(${c.id})">🗑</button>
+          </div>`).join('')}
+        ${correos.length===0?'<p class="text-muted">Sin correos registrados</p>':''}
+      </div>
+      ${correos.length<5?`
+      <div style="display:flex;gap:8px;">
+        <input id="nuevo-correo" class="form-control" placeholder="correo@ejemplo.com">
+        <button class="btn btn-primary" onclick="agregarCorreo()">+ Agregar</button>
+      </div>`:'<p class="text-muted">Máximo 5 correos alcanzado</p>'}
+    `;
+  } catch(e) { container.innerHTML = `<p class="text-muted">Error: ${e.message}</p>`; }
+}
+
+async function agregarCorreo() {
+  const email = document.getElementById('nuevo-correo').value.trim();
+  if (!email) return;
+  try {
+    await API.admin.agregarCorreo({ email });
+    toast('Correo agregado. Revisa tu email para verificarlo.','success');
+    cargarCorreos();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function eliminarCorreo(id) {
+  if (!confirm('¿Eliminar este correo de backup?')) return;
+  try { await API.admin.eliminarCorreo(id); cargarCorreos(); }
+  catch(e) { toast(e.message,'error'); }
+}
+
+async function cargarDrive() {
+  const container = document.getElementById('drive-container');
+  try {
+    const { estado } = await API.admin.driveEstado();
+    container.innerHTML = estado === 'autorizado'
+      ? `<div class="alert alert-success">✅ Google Drive autorizado y sincronizando automáticamente</div>
+         <p class="text-muted" style="font-size:12px;">La sincronización ocurre cada vez que se genera un backup.</p>`
+      : `<div class="alert alert-warning">⚠️ Google Drive no configurado</div>
+         <p class="text-muted" style="font-size:13px;">Para activar Drive, configura las variables de entorno en Netlify:<br>
+         <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, <code>GOOGLE_REFRESH_TOKEN</code></p>`;
+  } catch(e) { container.innerHTML = `<p class="text-muted">Error: ${e.message}</p>`; }
+}
+
+init();
+</script></body></html>

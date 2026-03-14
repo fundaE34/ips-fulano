@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Citas — IPS Fulano</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+renderLayout('Citas médicas');
+
+let citas=[], medicos=[], especialidades=[], pacientes=[];
+
+async function init() {
+  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="abrirModal()">+ Nueva cita</button>`;
+  const [c,m,e,p] = await Promise.all([API.citas.listar(), API.citas.medicos(), API.citas.especialidades(), API.pacientes.listar()]);
+  citas=c; medicos=m; especialidades=e; pacientes=p;
+  render();
+}
+
+function render() {
+  const content = document.getElementById('page-content');
+  const ef = document.getElementById('filtro-estado')?.value||'';
+  const filtradas = ef ? citas.filter(c=>c.estado===ef) : citas;
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Citas (${filtradas.length})</span>
+        <select id="filtro-estado" class="form-control" style="width:160px;" onchange="render()">
+          <option value="">Todos los estados</option>
+          <option value="Pendiente">Pendiente</option>
+          <option value="Realizada">Realizada</option>
+          <option value="Cancelada">Cancelada</option>
+        </select>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Paciente</th><th>Médico</th><th>Especialidad</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>${filtradas.length ? filtradas.map(c=>`
+            <tr>
+              <td><a href="/historia.html?id=${c.paciente_id}">${c.paciente_nombre}</a><br><span class="text-muted">${c.identificacion}</span></td>
+              <td>${c.medico_nombre}</td><td>${c.especialidad_nombre}</td>
+              <td>${fmt(c.fecha)}</td>
+              <td><span class="badge badge-${c.estado==='Pendiente'?'warning':c.estado==='Realizada'?'success':'danger'}">${c.estado}</span></td>
+              <td><div style="display:flex;gap:4px;">
+                ${c.estado==='Pendiente'?`<button class="btn btn-success btn-sm" onclick="marcarRealizada(${c.id})">✅</button>`:''}
+                <button class="btn btn-danger btn-sm" onclick="eliminar(${c.id})">🗑</button>
+              </div></td>
+            </tr>`).join(''):`<tr><td colspan="6"><div class="empty-state"><p>No hay citas registradas</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div id="modal-overlay" class="modal-overlay">
+      <div class="modal"><div class="modal-header"><span class="modal-title">Nueva cita</span><button class="modal-close" onclick="cerrarModal()">×</button></div>
+      <div class="modal-body" id="modal-body"></div></div>
+    </div>`;
+}
+
+function abrirModal() {
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label class="form-label">Paciente *</label>
+      <select id="f-paciente" class="form-control"><option value="">-- Seleccionar --</option>
+      ${pacientes.map(p=>`<option value="${p.id}">${p.nombre} — ${p.identificacion}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">Médico *</label>
+      <select id="f-medico" class="form-control"><option value="">-- Seleccionar --</option>
+      ${medicos.map(m=>`<option value="${m.id}">${m.nombre}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">Especialidad *</label>
+      <select id="f-esp" class="form-control"><option value="">-- Seleccionar --</option>
+      ${especialidades.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">Fecha y hora *</label><input id="f-fecha" type="datetime-local" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Motivo</label><textarea id="f-motivo" class="form-control" rows="3"></textarea></div>
+    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid var(--borde);">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button id="btn-g" class="btn btn-primary" onclick="guardar()">💾 Agendar</button></div>`;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function cerrarModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+async function guardar() {
+  const body = { paciente_id: document.getElementById('f-paciente').value, medico_id: document.getElementById('f-medico').value,
+    especialidad_id: document.getElementById('f-esp').value, fecha: document.getElementById('f-fecha').value,
+    motivo_consulta: document.getElementById('f-motivo').value };
+  if (!body.paciente_id||!body.medico_id||!body.especialidad_id||!body.fecha) { toast('Completa los campos requeridos','warning'); return; }
+  const btn = document.getElementById('btn-g');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try { await API.citas.crear(body); toast('Cita agendada','success'); cerrarModal(); citas=await API.citas.listar(); render(); }
+  catch(e) { toast(e.message,'error'); } finally { btn.disabled=false; btn.textContent='💾 Agendar'; }
+}
+async function marcarRealizada(id) {
+  try { await API.citas.realizada(id); toast('Marcada como realizada','success'); citas=await API.citas.listar(); render(); }
+  catch(e) { toast(e.message,'error'); }
+}
+async function eliminar(id) {
+  if (!confirm('¿Eliminar esta cita?')) return;
+  try { await API.citas.eliminar(id); toast('Cita eliminada','success'); citas=await API.citas.listar(); render(); }
+  catch(e) { toast(e.message,'error'); }
+}
+init();
+</script>
+</body>
+</html>

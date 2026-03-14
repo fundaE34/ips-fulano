@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Historias Clínicas — IPS Fulano</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+<div class="main">
+  <div class="topbar"><h1 id="topTitle">Historias Clínicas</h1></div>
+  <div class="page active">
+    <!-- Buscador de paciente -->
+    <div class="card" id="buscadorCard">
+      <div class="card-header"><h3>🔍 Buscar Paciente</h3></div>
+      <div class="card-body">
+        <div class="search-bar">
+          <input type="text" id="searchPac" class="search-input" placeholder="Nombre o identificación...">
+          <button class="btn btn-primary" onclick="buscarPaciente()">Buscar</button>
+        </div>
+        <div id="listaPacSearch" style="margin-top:14px;"></div>
+      </div>
+    </div>
+    <!-- Historia del paciente -->
+    <div id="historiaSection" style="display:none;">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 id="pacNombreH"></h3>
+            <span id="pacIdH" style="font-size:12px;color:var(--gris);"></span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="volver()">← Volver</button>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div><strong style="font-size:12px;color:var(--gris);">MOTIVO CONSULTA</strong><p id="hMotivo" style="margin-top:4px;"></p></div>
+            <div><strong style="font-size:12px;color:var(--gris);">ANTECEDENTES</strong><p id="hAntec" style="margin-top:4px;"></p></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 Entradas Clínicas</h3>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="abrirEntrada()">+ Nueva Entrada</button>
+            <button class="btn btn-secondary btn-sm" onclick="generarPDF()">📄 PDF</button>
+          </div>
+        </div>
+        <div class="card-body" id="listaEntradas"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nueva entrada -->
+<div class="modal-overlay" id="modalEntrada">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Nueva Entrada Clínica</h3>
+      <button class="modal-close" onclick="closeModal('modalEntrada')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Tipo de entrada</label>
+        <select id="tipoEntrada" class="form-control">
+          <option>Consulta</option><option>Evolución</option><option>Urgencia</option>
+          <option>Procedimiento</option><option>Nota de enfermería</option><option>Laboratorio</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Contenido *</label>
+        <textarea id="contenidoEntrada" class="form-control" rows="8" placeholder="Escriba aquí la nota clínica..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modalEntrada')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEntrada()">💾 Guardar Entrada</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script><script src="js/app.js"></script>
+<script>
+const user = authGuard();
+let historiaActual = null;
+let pacActual = null;
+
+if (user) {
+  renderSidebar('historias.html');
+  // Verificar si viene con paciente en URL
+  const params = new URLSearchParams(window.location.search);
+  const pacId = params.get('pac');
+  if (pacId) cargarHistoria(pacId);
+}
+
+async function buscarPaciente() {
+  const q = document.getElementById('searchPac').value.trim();
+  if (!q) return;
+  const pacs = await api.getPacientes(q);
+  document.getElementById('listaPacSearch').innerHTML = pacs?.length
+    ? `<div class="table-wrap"><table>
+         <thead><tr><th>Nombre</th><th>Identificación</th><th>Teléfono</th><th></th></tr></thead>
+         <tbody>${pacs.map(p => `<tr>
+           <td>${p.nombre}</td><td>${p.identificacion}</td><td>${p.telefono||'—'}</td>
+           <td><button class="btn btn-sm btn-primary" onclick="cargarHistoria(${p.id})">Ver Historia</button></td>
+         </tr>`).join('')}</tbody>
+       </table></div>`
+    : '<p style="color:var(--gris);padding:10px;">No se encontraron pacientes</p>';
+}
+
+async function cargarHistoria(pacId) {
+  const [pac, historia] = await Promise.all([
+    api.getPaciente(pacId),
+    api.getHistoria(pacId)
+  ]);
+  pacActual = pac;
+  document.getElementById('pacNombreH').textContent = pac.nombre;
+  document.getElementById('pacIdH').textContent = `${pac.tipo_identificacion||'CC'} ${pac.identificacion}`;
+
+  if (!historia) {
+    // Crear historia nueva
+    historiaActual = await api.crearHistoria({ paciente_id: pacId });
+  } else {
+    historiaActual = historia;
+  }
+
+  document.getElementById('hMotivo').textContent = historiaActual.motivo_consulta || '—';
+  document.getElementById('hAntec').textContent  = historiaActual.antecedentes || '—';
+  renderEntradas(historiaActual.entradas || []);
+  document.getElementById('buscadorCard').style.display = 'none';
+  document.getElementById('historiaSection').style.display = 'block';
+}
+
+function renderEntradas(entradas) {
+  if (!entradas.length) {
+    document.getElementById('listaEntradas').innerHTML =
+      '<p style="color:var(--gris);text-align:center;padding:30px;">No hay entradas clínicas aún</p>';
+    return;
+  }
+  document.getElementById('listaEntradas').innerHTML = entradas.map(e => `
+    <div class="entrada-card">
+      <div class="entrada-header">
+        <span>${fmtFechaHora(e.fecha)} · ${e.tipo_entrada||'Consulta'}</span>
+        <span>${e.autor_nombre} | ${e.autor_rol?.toUpperCase()}</span>
+      </div>
+      <div class="entrada-body">${e.contenido}</div>
+    </div>`).join('');
+}
+
+function abrirEntrada() {
+  document.getElementById('contenidoEntrada').value = '';
+  document.getElementById('tipoEntrada').value = 'Consulta';
+  openModal('modalEntrada');
+}
+
+async function guardarEntrada() {
+  const contenido = document.getElementById('contenidoEntrada').value.trim();
+  if (!contenido) return toast('El contenido no puede estar vacío', 'error');
+  try {
+    await api.agregarEntrada({
+      historia_id: historiaActual.id,
+      contenido,
+      tipo_entrada: document.getElementById('tipoEntrada').value,
+    });
+    closeModal('modalEntrada');
+    toast('Entrada guardada');
+    const h = await api.getHistoriaById(historiaActual.id);
+    historiaActual = h;
+    renderEntradas(h.entradas || []);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function volver() {
+  document.getElementById('historiaSection').style.display = 'none';
+  document.getElementById('buscadorCard').style.display = 'block';
+  document.getElementById('searchPac').value = '';
+  document.getElementById('listaPacSearch').innerHTML = '';
+  historiaActual = null; pacActual = null;
+  window.history.replaceState({}, '', '/historias.html');
+}
+
+async function generarPDF() {
+  if (!historiaActual || !pacActual) return;
+  toast('Generando PDF...', 'info');
+  // Carga jsPDF y genera el PDF con el diseño existente
+  if (!window.jspdf) await new Promise(r => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = r; document.head.appendChild(s);
+  });
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, ML = 18, MR = 18, docW = W - ML - MR;
+  const ROJO = [192, 57, 43];
+
+  // Header
+  doc.setFillColor(255,255,255); doc.setDrawColor(187,187,187); doc.setLineWidth(0.5);
+  doc.rect(ML, 12, docW, 24);
+  doc.setFillColor(...ROJO); doc.rect(ML+28, 12, docW-28-40, 24, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(16); doc.setFont('helvetica','bold');
+  doc.text('IPS FULANO', W/2, 22, {align:'center'});
+  doc.setFontSize(8); doc.setFont('helvetica','normal');
+  doc.text('Historia Clinica del Paciente', W/2, 28, {align:'center'});
+  doc.setTextColor(0); doc.setFontSize(7); doc.setFont('helvetica','bold');
+  doc.text(`CODIGO: HC-${String(historiaActual.id).padStart(4,'0')}`, W-ML-38, 18);
+  doc.text('VERSION: 01', W-ML-38, 23);
+  doc.text(`FECHA: ${fmtFecha(historiaActual.fecha_creacion)}`, W-ML-38, 28);
+
+  let y = 42;
+  // Sección paciente
+  doc.setFillColor(...ROJO); doc.rect(ML, y, docW, 7, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('  INFORMACION DEL PACIENTE', ML+2, y+5);
+  y += 10;
+
+  const rows = [
+    ['NOMBRE', pacActual.nombre, 'IDENTIFICACION', `${pacActual.tipo_identificacion||'CC'} ${pacActual.identificacion}`],
+    ['TELEFONO', pacActual.telefono||'-', 'EMAIL', pacActual.email||'-'],
+    ['DIRECCION', pacActual.direccion||'-', 'SEXO', pacActual.sexo||'-'],
+  ];
+  const cw = [28, docW/2-28, 28, docW/2-28];
+  rows.forEach((row, ri) => {
+    if (ri%2===1) { doc.setFillColor(250,250,250); doc.rect(ML, y, docW, 8, 'F'); }
+    else { doc.setFillColor(255,255,255); doc.rect(ML, y, docW, 8, 'F'); }
+    doc.setDrawColor(220,220,220); doc.rect(ML, y, docW, 8);
+    let x = ML;
+    row.forEach((cell, ci) => {
+      if (ci%2===0) { doc.setTextColor(192,57,43); doc.setFont('helvetica','bold'); }
+      else { doc.setTextColor(50,50,50); doc.setFont('helvetica','normal'); }
+      doc.setFontSize(8);
+      doc.text(String(cell).substring(0,40), x+3, y+5.5);
+      x += cw[ci];
+    });
+    y += 8;
+  });
+
+  y += 6;
+  // Entradas
+  doc.setFillColor(...ROJO); doc.rect(ML, y, docW, 7, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('  ENTRADAS DE HISTORIA CLINICA', ML+2, y+5);
+  y += 10;
+
+  (historiaActual.entradas||[]).slice().reverse().forEach(e => {
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFillColor(...ROJO); doc.rect(ML, y, docW, 7, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    doc.text(fmtFechaHora(e.fecha), ML+2, y+5);
+    doc.text(`${e.autor_nombre} | ${(e.autor_rol||'').toUpperCase()}`, ML+docW-2, y+5, {align:'right'});
+    y += 7;
+    doc.setDrawColor(220,220,220); doc.setFillColor(255,255,255);
+    const lines = doc.splitTextToSize(e.contenido||'', docW-8);
+    const h = lines.length*5+8;
+    doc.rect(ML, y, docW, h, 'FD');
+    doc.setTextColor(50,50,50); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.text(lines, ML+4, y+6);
+    y += h + 6;
+  });
+
+  // Footer
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i=1; i<=pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...ROJO); doc.setLineWidth(0.8);
+    doc.line(ML, 282, W-MR, 282);
+    doc.setTextColor(100); doc.setFontSize(7); doc.setFont('helvetica','normal');
+    doc.text('ipsfulano@fundacioneudes.co  |  Tel: 601-7559343  (+57) 3173665722  |  Linea de Vida: 320 999 03337', W/2, 286, {align:'center'});
+    doc.text('Documento confidencial — Informacion medica protegida por ley', W/2, 290, {align:'center'});
+    // Marca de agua
+    doc.saveGraphicsState?.();
+    doc.setTextColor(235,235,235); doc.setFontSize(55); doc.setFont('helvetica','bold');
+    doc.text('IPS FULANO', W/2, 160, {align:'center', angle:45});
+    doc.setTextColor(100); doc.setFontSize(8); doc.setFont('helvetica','normal');
+    doc.text(`Página ${i} de ${pageCount}`, W/2, 295, {align:'center'});
+  }
+
+  doc.save(`Historia_${pacActual.nombre.replace(/ /g,'_')}_${pacActual.identificacion}.pdf`);
+  toast('PDF generado exitosamente');
+}
+</script>
+</body></html>

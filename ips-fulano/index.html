@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IPS Fulano — Iniciar Sesión</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .step { display: none; } .step.active { display: block; }
+    .timer { color: var(--rojo); font-size: 13px; text-align: center; margin-top: 6px; }
+  </style>
+</head>
+<body>
+<div class="login-bg">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="img/logo.png" onerror="this.style.display='none'" alt="Logo">
+      <h2>IPS FULANO</h2>
+      <p>Sistema de Gestión en Salud</p>
+    </div>
+
+    <!-- Paso 1: Login -->
+    <div id="step1" class="step active">
+      <div id="loginError" class="login-error"></div>
+      <div class="login-form">
+        <div class="form-group">
+          <label>Correo electrónico</label>
+          <input type="email" id="email" class="form-control" placeholder="correo@ejemplo.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label>Contraseña</label>
+          <input type="password" id="password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button class="btn-login" id="btnLogin" onclick="doLogin()">Iniciar Sesión</button>
+      </div>
+    </div>
+
+    <!-- Paso 2: 2FA -->
+    <div id="step2" class="step">
+      <p style="text-align:center;color:var(--gris);margin-bottom:6px;font-size:13.5px;">
+        Ingresa el código de 6 dígitos enviado a tu correo
+      </p>
+      <div id="loginError2" class="login-error"></div>
+      <div class="code-input">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d0">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d1">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d2">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d3">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d4">
+        <input type="text" maxlength="1" class="code-digit form-control" id="d5">
+      </div>
+      <div class="timer" id="timer">El código expira en <span id="countdown">5:00</span></div>
+      <button class="btn-login" onclick="do2FA()">Verificar</button>
+      <button onclick="goBack()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--gris);cursor:pointer;font-size:13px;">← Volver</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+let pendingUserId = null;
+let timerInterval = null;
+
+// Redirect si ya está logueado
+if (localStorage.getItem('token')) window.location.href = '/dashboard.html';
+
+document.querySelectorAll('.code-digit').forEach((el, i) => {
+  el.addEventListener('input', () => {
+    el.value = el.value.replace(/\D/g,'');
+    if (el.value && i < 5) document.getElementById(`d${i+1}`).focus();
+  });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !el.value && i > 0) document.getElementById(`d${i-1}`).focus();
+  });
+});
+
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideErrors() {
+  document.getElementById('loginError').style.display = 'none';
+  document.getElementById('loginError2').style.display = 'none';
+}
+
+async function doLogin() {
+  hideErrors();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if (!email || !password) return showError('loginError', 'Ingresa correo y contraseña');
+
+  const btn = document.getElementById('btnLogin');
+  btn.textContent = 'Verificando...'; btn.disabled = true;
+
+  try {
+    const res = await api.login(email, password);
+    if (!res) return;
+    if (res.requiere2fa) {
+      pendingUserId = res.userId;
+      document.getElementById('step1').classList.remove('active');
+      document.getElementById('step2').classList.add('active');
+      document.getElementById('d0').focus();
+      startTimer(300);
+    } else {
+      guardarSesion(res);
+    }
+  } catch(e) {
+    showError('loginError', e.message);
+  } finally {
+    btn.textContent = 'Iniciar Sesión'; btn.disabled = false;
+  }
+}
+
+async function do2FA() {
+  hideErrors();
+  const codigo = [0,1,2,3,4,5].map(i => document.getElementById(`d${i}`).value).join('');
+  if (codigo.length < 6) return showError('loginError2', 'Ingresa los 6 dígitos');
+  try {
+    const res = await api.verify2fa(pendingUserId, codigo);
+    if (!res) return;
+    clearInterval(timerInterval);
+    guardarSesion(res);
+  } catch(e) {
+    showError('loginError2', e.message);
+  }
+}
+
+function guardarSesion(res) {
+  localStorage.setItem('token', res.token);
+  localStorage.setItem('usuario', JSON.stringify(res.usuario));
+  if (!res.passwordCambiada) {
+    window.location.href = '/cambiar-password.html';
+  } else {
+    window.location.href = '/dashboard.html';
+  }
+}
+
+function goBack() {
+  clearInterval(timerInterval);
+  document.getElementById('step2').classList.remove('active');
+  document.getElementById('step1').classList.add('active');
+  pendingUserId = null;
+}
+
+function startTimer(seconds) {
+  let s = seconds;
+  timerInterval = setInterval(() => {
+    s--;
+    const m = Math.floor(s/60), sec = s%60;
+    document.getElementById('countdown').textContent = `${m}:${sec.toString().padStart(2,'0')}`;
+    if (s <= 0) {
+      clearInterval(timerInterval);
+      showError('loginError2', 'Código expirado. Vuelve a iniciar sesión.');
+    }
+  }, 1000);
+}
+</script>
+</body>
+</html>

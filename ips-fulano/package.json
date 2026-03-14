@@ -1,0 +1,13 @@
+{
+  "name": "ips-fulano",
+  "version": "2.0.0",
+  "description": "Sistema de Gestión IPS Fulano",
+  "scripts": { "dev": "netlify dev" },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "nodemailer": "^6.9.9",
+    "googleapis": "^144.0.0"
+  }
+}

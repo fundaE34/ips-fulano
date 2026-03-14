@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historia Clínica — IPS Fulano</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="icon" href="/img/logo.png">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+renderLayout('Historia Clínica');
+
+const urlParams = new URLSearchParams(window.location.search);
+const pacienteId = urlParams.get('id');
+if (!pacienteId) { window.location.href = '/pacientes.html'; throw ''; }
+
+let data = null;
+
+async function init() {
+  document.getElementById('topbar-actions').innerHTML = `
+    <button class="btn btn-secondary" onclick="window.history.back()">← Volver</button>
+    <button class="btn btn-secondary" onclick="generarPDF()">📄 Descargar PDF</button>
+  `;
+
+  const content = document.getElementById('page-content');
+  content.innerHTML = `<div style="text-align:center;padding:40px;"><span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:var(--rojo);width:32px;height:32px;border-width:3px;"></span></div>`;
+
+  try {
+    data = await API.historias.obtener(pacienteId);
+    render();
+  } catch(e) {
+    content.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
+}
+
+function render() {
+  const { paciente, historia, entradas } = data;
+  const u = API.usuario();
+  const puedeEditar = ['admin','medico','enfermeria'].includes(u.rol);
+  const content = document.getElementById('page-content');
+
+  content.innerHTML = `
+    <!-- Info paciente -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <span class="card-title">👤 ${paciente.nombre}</span>
+        <span class="badge badge-info">${paciente.identificacion}</span>
+      </div>
+      <div class="card-body">
+        <div class="form-grid-3">
+          <div><div class="form-label">Edad</div><div>${paciente.edad ? paciente.edad + ' años' : '—'}</div></div>
+          <div><div class="form-label">Sexo</div><div>${paciente.sexo || '—'}</div></div>
+          <div><div class="form-label">Teléfono</div><div>${paciente.telefono || '—'}</div></div>
+          <div><div class="form-label">Email</div><div>${paciente.email || '—'}</div></div>
+          <div><div class="form-label">Dirección</div><div>${paciente.direccion || '—'}</div></div>
+          ${(paciente.campos_extra||[]).map(c => `<div><div class="form-label">${c.campo_nombre}</div><div>${c.valor || '—'}</div></div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Datos historia -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <span class="card-title">📋 Datos de la historia</span>
+        ${historia ? `<span class="text-muted" style="font-size:12px;">Abierta: ${fmtDate(historia.fecha_creacion)}</span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Motivo de consulta</label>
+            <textarea id="motivo" class="form-control" rows="3" ${!puedeEditar?'readonly':''}>${historia?.motivo_consulta||''}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Antecedentes</label>
+            <textarea id="antecedentes" class="form-control" rows="3" ${!puedeEditar?'readonly':''}>${historia?.antecedentes||''}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nueva entrada -->
+    ${puedeEditar ? `
+    <div class="card mb-4">
+      <div class="card-header"><span class="card-title">✏️ Nueva entrada</span></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Tipo de entrada</label>
+            <select id="tipo-entrada" class="form-control">
+              ${['Consulta','Evolución','Procedimiento','Nota de enfermería','Otro'].map(t => `<option>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contenido *</label>
+          <textarea id="contenido-entrada" class="form-control" rows="4" placeholder="Descripción de la atención médica..."></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="guardarEntrada()">💾 Guardar entrada</button>
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- Entradas anteriores -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📝 Entradas (${entradas.length})</span>
+      </div>
+      <div class="card-body" id="entradas-container">
+        ${entradas.length ? entradas.map(e => `
+          <div class="entrada-card" id="entrada-${e.id}">
+            <div class="entrada-header">
+              <span>🕐 ${fmt(e.fecha)}</span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span>${e.autor_nombre} | ${e.rol_nombre?.toUpperCase()}</span>
+                ${(u.rol === 'admin' || e.autor_id == u.id) ? `
+                  <button onclick="editarEntrada(${e.id})" style="background:rgba(255,255,255,.25);border:none;color:#fff;cursor:pointer;padding:2px 6px;border-radius:4px;font-size:11px;">✏️</button>
+                  <button onclick="eliminarEntrada(${e.id})" style="background:rgba(255,255,255,.25);border:none;color:#fff;cursor:pointer;padding:2px 6px;border-radius:4px;font-size:11px;">🗑</button>
+                ` : ''}
+              </div>
+            </div>
+            <div class="entrada-body" id="entrada-body-${e.id}">${e.contenido}</div>
+          </div>
+        `).join('') : `<div class="empty-state"><i>📝</i><p>No hay entradas registradas</p></div>`}
+      </div>
+    </div>
+  `;
+}
+
+async function guardarEntrada() {
+  const contenido = document.getElementById('contenido-entrada')?.value?.trim();
+  const motivo    = document.getElementById('motivo')?.value?.trim();
+  const antecedentes = document.getElementById('antecedentes')?.value?.trim();
+  const tipo      = document.getElementById('tipo-entrada')?.value;
+
+  if (!contenido) { toast('El contenido es requerido', 'warning'); return; }
+
+  try {
+    await API.historias.guardar(pacienteId, { contenido, motivo_consulta: motivo, antecedentes, tipo_entrada: tipo });
+    toast('Entrada guardada', 'success');
+    document.getElementById('contenido-entrada').value = '';
+    data = await API.historias.obtener(pacienteId);
+    render();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function editarEntrada(id) {
+  const bodyEl = document.getElementById(`entrada-body-${id}`);
+  const actual = bodyEl.textContent.trim();
+  bodyEl.innerHTML = `
+    <textarea id="edit-contenido-${id}" class="form-control" rows="4">${actual}</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="btn btn-primary btn-sm" onclick="guardarEditEntrada(${id})">💾 Guardar</button>
+      <button class="btn btn-secondary btn-sm" onclick="cancelarEditEntrada(${id}, \`${actual.replace(/`/g,'\\`')}\`)">Cancelar</button>
+    </div>
+  `;
+}
+
+async function guardarEditEntrada(id) {
+  const contenido = document.getElementById(`edit-contenido-${id}`).value.trim();
+  if (!contenido) { toast('El contenido no puede estar vacío', 'warning'); return; }
+  try {
+    await API.historias.editarEntrada(id, { contenido });
+    toast('Entrada actualizada', 'success');
+    data = await API.historias.obtener(pacienteId);
+    render();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function cancelarEditEntrada(id, original) {
+  document.getElementById(`entrada-body-${id}`).textContent = original;
+}
+
+async function eliminarEntrada(id) {
+  if (!confirm('¿Eliminar esta entrada? No se puede deshacer.')) return;
+  try {
+    await API.historias.eliminarEntrada(id);
+    toast('Entrada eliminada', 'success');
+    data = await API.historias.obtener(pacienteId);
+    render();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function generarPDF() {
+  const { jsPDF } = window.jspdf;
+  const { paciente, historia, entradas } = data;
+  const doc = new jsPDF();
+
+  const ROJO  = [192, 57, 43];
+  const NEGRO = [26, 26, 26];
+  const GRIS  = [120, 120, 120];
+  const W     = 210;
+  let y       = 15;
+
+  // Header
+  doc.setFillColor(...ROJO);
+  doc.rect(10, y, W - 20, 20, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('HISTORIA CLÍNICA', W / 2, y + 8, { align: 'center' });
+  doc.setFontSize(9);
+  doc.text('IPS FULANO', W / 2, y + 15, { align: 'center' });
+  doc.setTextColor(...NEGRO);
+  y += 26;
+
+  // Info paciente
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('INFORMACIÓN DEL PACIENTE', 10, y);
+  y += 5;
+  doc.setDrawColor(192, 57, 43);
+  doc.line(10, y, W - 10, y);
+  y += 5;
+
+  const infoRows = [
+    ['Nombre', paciente.nombre],
+    ['Identificación', paciente.identificacion],
+    ['Edad', paciente.edad ? `${paciente.edad} años` : '—'],
+    ['Sexo', paciente.sexo || '—'],
+    ['Teléfono', paciente.telefono || '—'],
+    ['Email', paciente.email || '—'],
+    ['Dirección', paciente.direccion || '—'],
+  ];
+
+  doc.setFontSize(9);
+  infoRows.forEach(([k, v]) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...GRIS);
+    doc.text(k.toUpperCase(), 12, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...NEGRO);
+    doc.text(String(v), 55, y);
+    y += 6;
+  });
+
+  y += 4;
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...NEGRO);
+  doc.text('ENTRADAS', 10, y);
+  y += 5;
+  doc.setDrawColor(192, 57, 43);
+  doc.line(10, y, W - 10, y);
+  y += 5;
+
+  entradas.forEach(e => {
+    if (y > 270) { doc.addPage(); y = 15; }
+    doc.setFillColor(...ROJO);
+    doc.rect(10, y, W - 20, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmt(e.fecha), 13, y + 5.5);
+    doc.text(`${e.autor_nombre} | ${e.rol_nombre?.toUpperCase()}`, W - 12, y + 5.5, { align: 'right' });
+    y += 10;
+    doc.setTextColor(...NEGRO);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const lines = doc.splitTextToSize(e.contenido, W - 24);
+    lines.forEach(line => {
+      if (y > 275) { doc.addPage(); y = 15; }
+      doc.text(line, 12, y);
+      y += 5;
+    });
+    y += 4;
+  });
+
+  // Footer en cada página
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(...GRIS);
+    doc.text('ipsfulano@fundacioneudes.co  ·  Tel: 601-7559343  ·  (+57) 3173665722', W / 2, 290, { align: 'center' });
+    doc.text('Documento confidencial — Información médica protegida por ley', W / 2, 294, { align: 'center' });
+    doc.text(`Página ${i} de ${totalPages}`, W - 15, 294, { align: 'right' });
+  }
+
+  doc.save(`Historia_${paciente.nombre.replace(/\s/g,'_')}_${paciente.identificacion}.pdf`);
+  toast('PDF generado', 'success');
+}
+
+init();
+</script>
+</body>
+</html>

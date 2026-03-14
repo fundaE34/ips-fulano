@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Auditoría — IPS Fulano</title><link rel="stylesheet" href="/css/app.css"></head>
+<body>
+<script src="/js/api.js"></script><script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+const u = API.usuario();
+if (u.rol !== 'admin') { window.location.href='/dashboard.html'; throw ''; }
+renderLayout('Auditoría del sistema');
+
+async function init() {
+  const content = document.getElementById('page-content');
+  content.innerHTML = `<div style="text-align:center;padding:40px;"><span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:var(--rojo);width:32px;height:32px;border-width:3px;"></span></div>`;
+  try {
+    const registros = await API.admin.auditoria();
+    const acciones  = [...new Set(registros.map(r=>r.accion))].sort();
+
+    content.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🔍 Auditoría (${registros.length} registros)</span>
+          <div style="display:flex;gap:8px;">
+            <input id="search-audit" class="form-control" placeholder="Buscar..." style="width:200px;" oninput="filtrar()">
+            <select id="filtro-accion" class="form-control" style="width:180px;" onchange="filtrar()">
+              <option value="">Todas las acciones</option>
+              ${acciones.map(a=>`<option>${a}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="table-container">
+          <table id="tabla-auditoria">
+            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Descripción</th><th>IP</th><th>Resultado</th></tr></thead>
+            <tbody id="tbody-auditoria">
+              ${registros.map(r=>`
+                <tr>
+                  <td style="white-space:nowrap;font-size:12px;">${fmt(r.fecha_hora)}</td>
+                  <td class="text-muted" style="font-size:12px;">${r.usuario_email||r.usuario_nombre||'—'}</td>
+                  <td><code style="font-size:11px;background:var(--gris-clar);padding:2px 5px;border-radius:3px;">${r.accion}</code></td>
+                  <td class="text-muted" style="font-size:12px;">${r.modulo||'—'}</td>
+                  <td style="font-size:12px;max-width:220px;">${r.descripcion||'—'}</td>
+                  <td class="text-muted" style="font-size:11px;">${r.ip_origen||'—'}</td>
+                  <td><span class="badge badge-${r.exitoso?'success':'danger'}">${r.exitoso?'OK':'Error'}</span></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    window._auditData = registros;
+  } catch(e) {
+    content.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
+}
+
+function filtrar() {
+  const q      = document.getElementById('search-audit').value.toLowerCase();
+  const accion = document.getElementById('filtro-accion').value;
+  const rows   = document.querySelectorAll('#tbody-auditoria tr');
+  rows.forEach(row => {
+    const txt    = row.textContent.toLowerCase();
+    const match  = (!q || txt.includes(q)) && (!accion || txt.includes(accion.toLowerCase()));
+    row.style.display = match ? '' : 'none';
+  });
+}
+init();
+</script></body></html>

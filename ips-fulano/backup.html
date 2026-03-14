@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Backup — IPS Fulano</title><link rel="stylesheet" href="/css/app.css"></head>
+<body>
+<script src="/js/api.js"></script><script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+const u = API.usuario();
+if (u.rol !== 'admin') { window.location.href='/dashboard.html'; throw ''; }
+renderLayout('Backup del sistema');
+
+async function init() {
+  document.getElementById('topbar-actions').innerHTML = `
+    <button id="btn-backup" class="btn btn-primary" onclick="generarBackup()">📦 Generar backup ahora</button>`;
+  await cargar();
+}
+
+async function cargar() {
+  const content = document.getElementById('page-content');
+  try {
+    const backups = await API.admin.backups();
+    content.innerHTML = `
+      <div class="alert alert-info mb-4">ℹ️ Los backups incluyen todos los datos (pacientes, citas, historias, auditoría) en formato ZIP y se envían automáticamente a los correos verificados.</div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">💾 Historial de backups (${backups.length})</span></div>
+        <div class="table-container"><table>
+          <thead><tr><th>Archivo</th><th>Tipo</th><th>Tamaño</th><th>Estado</th><th>Fecha</th><th>Solicitado por</th></tr></thead>
+          <tbody>${backups.length ? backups.map(b=>`
+            <tr>
+              <td style="font-size:12px;">${b.archivo_nombre||'—'}</td>
+              <td><span class="badge badge-info">${b.tipo}</span></td>
+              <td class="text-muted">${b.tamano_bytes ? (b.tamano_bytes/1024).toFixed(1)+' KB' : '—'}</td>
+              <td><span class="badge badge-${b.estado==='exitoso'?'success':b.estado==='generando'?'warning':'danger'}">${b.estado}</span></td>
+              <td class="text-muted">${fmt(b.creado_en)}</td>
+              <td class="text-muted">${b.solicitado_por_nombre||'Sistema'}</td>
+            </tr>`).join(''):`<tr><td colspan="6"><div class="empty-state"><p>No hay backups generados</p></div></td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+  } catch(e) { content.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+async function generarBackup() {
+  const btn = document.getElementById('btn-backup');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Generando...';
+  try {
+    await API.admin.generarBackup();
+    toast('Backup iniciado. Recibirás un correo cuando termine.','success');
+    setTimeout(cargar, 3000);
+  } catch(e) { toast(e.message,'error'); }
+  finally { setTimeout(()=>{ btn.disabled=false; btn.textContent='📦 Generar backup'; }, 5000); }
+}
+init();
+</script></body></html>

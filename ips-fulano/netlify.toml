@@ -1,0 +1,44 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[dev]
+  port = 8888
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/dashboard"
+  to = "/dashboard.html"
+  status = 200
+
+[[redirects]]
+  from = "/pacientes"
+  to = "/pacientes.html"
+  status = 200
+
+[[redirects]]
+  from = "/historias"
+  to = "/historias.html"
+  status = 200
+
+[[redirects]]
+  from = "/citas"
+  to = "/citas.html"
+  status = 200
+
+[[redirects]]
+  from = "/usuarios"
+  to = "/usuarios.html"
+  status = 200
+
+[[redirects]]
+  from = "/configuracion"
+  to = "/configuracion.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"

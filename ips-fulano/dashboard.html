@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard — IPS Fulano</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <h1>Dashboard</h1>
+    <div class="topbar-right">
+      <span id="topUser" style="font-size:13px;color:var(--gris)"></span>
+      <button class="btn-logout" onclick="logout()">Salir</button>
+    </div>
+  </div>
+  <div class="page active" id="pageContent">
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="value" id="sPac">—</div><div class="label">Pacientes activos</div></div>
+      <div class="stat-card"><div class="value" id="sCit">—</div><div class="label">Total citas</div></div>
+      <div class="stat-card"><div class="value" id="sHoy">—</div><div class="label">Citas hoy</div></div>
+      <div class="stat-card"><div class="value" id="sPend">—</div><div class="label">Pendientes</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="card">
+        <div class="card-header"><h3>👥 Últimos pacientes</h3><a href="pacientes.html" class="btn btn-sm btn-secondary">Ver todos</a></div>
+        <div class="card-body table-wrap">
+          <table><thead><tr><th>Nombre</th><th>Identificación</th><th>Registrado</th></tr></thead>
+          <tbody id="tbPac"></tbody></table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>📅 Últimas citas</h3><a href="citas.html" class="btn btn-sm btn-secondary">Ver todas</a></div>
+        <div class="card-body table-wrap">
+          <table><thead><tr><th>Paciente</th><th>Médico</th><th>Fecha</th><th>Estado</th></tr></thead>
+          <tbody id="tbCit"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="js/api.js"></script><script src="js/app.js"></script>
+<script>
+const user = authGuard();
+if (user) {
+  renderSidebar('dashboard.html');
+  document.getElementById('topUser').textContent = user.nombre;
+  api.dashboard().then(d => {
+    if (!d) return;
+    document.getElementById('sPac').textContent  = d.stats.total_pacientes;
+    document.getElementById('sCit').textContent  = d.stats.total_citas;
+    document.getElementById('sHoy').textContent  = d.stats.citas_hoy;
+    document.getElementById('sPend').textContent = d.stats.citas_pendientes;
+    document.getElementById('tbPac').innerHTML = d.pacientes_recientes.map(p => `
+      <tr><td><a href="historias.html?pac=${p.id}" style="color:var(--rojo);text-decoration:none;">${p.nombre}</a></td>
+          <td>${p.identificacion}</td><td>${fmtFecha(p.creado_en)}</td></tr>`).join('');
+    document.getElementById('tbCit').innerHTML = d.citas_recientes.map(c => `
+      <tr><td>${c.paciente_nombre}</td><td>${c.medico_nombre}</td>
+          <td>${fmtFechaHora(c.fecha)}</td><td>${estadoBadge(c.estado)}</td></tr>`).join('');
+  });
+}
+</script>
+</body></html>

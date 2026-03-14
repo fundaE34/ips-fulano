@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Especialidades — IPS Fulano</title><link rel="stylesheet" href="/css/app.css"></head>
+<body>
+<script src="/js/api.js"></script><script src="/js/layout.js"></script>
+<script>
+if (!requireAuth()) throw '';
+const u = API.usuario();
+if (u.rol !== 'admin') { window.location.href='/dashboard.html'; throw ''; }
+renderLayout('Especialidades');
+
+let especialidades = [];
+async function init() {
+  document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-primary" onclick="abrirModal()">+ Nueva especialidad</button>`;
+  especialidades = await API.admin.especialidades();
+  render();
+}
+
+function render() {
+  document.getElementById('page-content').innerHTML = `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Especialidades (${especialidades.length})</span></div>
+      <div class="table-container"><table>
+        <thead><tr><th>Nombre</th><th>Total citas</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>${especialidades.map(e=>`
+          <tr>
+            <td style="font-weight:600;">${e.nombre}</td>
+            <td>${e.total_citas||0}</td>
+            <td><span class="badge badge-${e.activo?'success':'gray'}">${e.activo?'Activo':'Inactivo'}</span></td>
+            <td><div style="display:flex;gap:4px;">
+              <button class="btn btn-secondary btn-sm" onclick="editar(${e.id},'${e.nombre.replace(/'/g,"\\'")}')">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="eliminar(${e.id})">🗑</button>
+            </div></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+    <div id="modal-overlay" class="modal-overlay">
+      <div class="modal"><div class="modal-header"><span class="modal-title" id="modal-title">Nueva especialidad</span>
+      <button class="modal-close" onclick="cerrarModal()">×</button></div>
+      <div class="modal-body" id="modal-body"></div></div>
+    </div>`;
+}
+
+let editId=null;
+function abrirModal(id=null, nombre='') {
+  editId=id;
+  document.getElementById('modal-title').textContent = id ? 'Editar especialidad' : 'Nueva especialidad';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label class="form-label">Nombre *</label>
+      <input id="f-nombre" class="form-control" value="${nombre}" placeholder="Ej: Cardiología"></div>
+    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid var(--borde);">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button id="btn-g" class="btn btn-primary" onclick="guardar()">💾 Guardar</button></div>`;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function editar(id, nombre) { abrirModal(id, nombre); }
+function cerrarModal() { document.getElementById('modal-overlay').classList.remove('show'); editId=null; }
+
+async function guardar() {
+  const nombre = document.getElementById('f-nombre').value.trim();
+  if (!nombre) { toast('El nombre es requerido','warning'); return; }
+  const btn=document.getElementById('btn-g'); btn.disabled=true;
+  try {
+    if (editId) { await API.admin.editarEsp(editId,{nombre,activo:true}); }
+    else { await API.admin.crearEsp({nombre}); }
+    toast('Especialidad guardada','success');
+    cerrarModal(); especialidades=await API.admin.especialidades(); render();
+  } catch(e) { toast(e.message,'error'); } finally { btn.disabled=false; btn.textContent='💾 Guardar'; }
+}
+async function eliminar(id) {
+  if (!confirm('¿Desactivar esta especialidad?')) return;
+  try { await API.admin.eliminarEsp(id); toast('Especialidad desactivada','success'); especialidades=await API.admin.especialidades(); render(); }
+  catch(e) { toast(e.message,'error'); }
+}
+init();
+</script></body></html>
