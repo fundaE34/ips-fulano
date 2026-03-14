@@ -80,3 +80,12 @@ const api = {
 window.api = api;
 window.getUser = getUser;
 window.logout = logout;
+
+function requireAuth() {
+  if (!localStorage.getItem('token')) {
+    window.location.href = '/';
+    return false;
+  }
+  return true;
+}
+window.requireAuth = requireAuth;
