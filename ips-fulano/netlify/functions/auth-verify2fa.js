@@ -18,7 +18,8 @@ exports.handler = async (event) => {
 
     const { rows } = await query(
       `SELECT * FROM codigo_verificacion
-       WHERE email=$1 AND codigo=$2 AND tipo='2fa' AND usado=false AND expira_en > NOW()
+       WHERE email=$1 AND codigo=$2 AND tipo='2fa' AND usado=false
+       AND expira_en > (NOW() AT TIME ZONE 'UTC')
        ORDER BY id DESC LIMIT 1`,
       [user.email, codigo]
     );
