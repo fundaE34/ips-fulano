@@ -89,3 +89,10 @@ function requireAuth() {
   return true;
 }
 window.requireAuth = requireAuth;
+
+// Alias para compatibilidad con layout.js
+const API = {
+  usuario: getUser,
+  logout: logout
+};
+window.API = API;
